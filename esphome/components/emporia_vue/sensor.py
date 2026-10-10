@@ -13,11 +13,15 @@ from esphome.const import (
     CONF_FREQUENCY,
     CONF_PHASE_ANGLE,
     DEVICE_CLASS_CURRENT,
+    DEVICE_CLASS_DURATION,
     DEVICE_CLASS_FREQUENCY,
     DEVICE_CLASS_POWER,
     DEVICE_CLASS_VOLTAGE,
     STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
     UNIT_AMPERE,
+    UNIT_PERCENT,
+    UNIT_SECOND,
     UNIT_WATT,
     UNIT_VOLT,
     UNIT_HERTZ,
@@ -30,6 +34,21 @@ CONF_PHASE_ID = "phase_id"
 CONF_VARIANT = "variant"
 
 CONF_ON_UPDATE = "on_update"
+
+CONF_CYCLE_CAPTURE = "cycle_capture"
+CONF_POLL_INTERVAL = "poll_interval"
+CONF_LIVE_INTERVAL = "live_interval"
+CONF_TRIGGER_CURRENT = "trigger_current"
+CONF_REARM_CURRENT = "rearm_current"
+CONF_PRE_TRIGGER = "pre_trigger"
+CONF_POST_TRIGGER = "post_trigger"
+CONF_SETTLE_FACTOR = "settle_factor"
+CONF_MAINS_CURRENT_MULTIPLIER = "mains_current_multiplier"
+CONF_AUX_CURRENT_MULTIPLIER = "aux_current_multiplier"
+CONF_AUX_INPUTS = "aux_inputs"
+CONF_LOG_TRACE = "log_trace"
+CONF_ON_START_CAPTURED = "on_start_captured"
+CONF_FRAME_RATE = "frame_rate"
 
 CODEOWNERS = ["@flaviut", "@Maelstrom96", "@krconv"]
 ESP_PLATFORMS = ["esp-idf"]
@@ -46,6 +65,11 @@ CTClampConfig = emporia_vue_ns.class_("CTClampConfig")
 # Trigger for after statistics sensors are updated
 EmporiaVueUpdateTrigger = emporia_vue_ns.class_(
     "EmporiaVueUpdateTrigger", automation.Trigger.template()
+)
+CycleCaptureConfig = emporia_vue_ns.class_("CycleCaptureConfig")
+EmporiaVueStartCapturedTrigger = emporia_vue_ns.class_(
+    "EmporiaVueStartCapturedTrigger",
+    automation.Trigger.template(cg.std_string, cg.std_string),
 )
 
 
@@ -153,6 +177,106 @@ def validate_phases(val):
     return base_validated
 
 
+def _current_sensor(decimals=1):
+    return sensor.sensor_schema(
+        unit_of_measurement=UNIT_AMPERE,
+        device_class=DEVICE_CLASS_CURRENT,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=decimals,
+    )
+
+
+def _voltage_sensor():
+    return sensor.sensor_schema(
+        unit_of_measurement=UNIT_VOLT,
+        device_class=DEVICE_CLASS_VOLTAGE,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=1,
+    )
+
+
+def _frequency_sensor():
+    return sensor.sensor_schema(
+        unit_of_measurement=UNIT_HERTZ,
+        device_class=DEVICE_CLASS_FREQUENCY,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=2,
+    )
+
+
+# key -> (setter, schema factory)
+CYCLE_CAPTURE_SENSORS = {
+    "max_current": ("set_max_current_sensor", _current_sensor),
+    "min_voltage": ("set_min_voltage_sensor", _voltage_sensor),
+    "min_frequency": ("set_min_frequency_sensor", _frequency_sensor),
+    "max_frequency": ("set_max_frequency_sensor", _frequency_sensor),
+    "start_peak_current": ("set_start_peak_current_sensor", _current_sensor),
+    "start_inrush_100ms": ("set_start_inrush_100ms_sensor", _current_sensor),
+    "start_peak_instant": ("set_start_peak_instant_sensor", _current_sensor),
+    "start_running_current": ("set_start_running_current_sensor", _current_sensor),
+    "start_duration": (
+        "set_start_duration_sensor",
+        lambda: sensor.sensor_schema(
+            unit_of_measurement=UNIT_SECOND,
+            device_class=DEVICE_CLASS_DURATION,
+            state_class=STATE_CLASS_MEASUREMENT,
+            accuracy_decimals=2,
+        ),
+    ),
+    "start_voltage_min": ("set_start_voltage_min_sensor", _voltage_sensor),
+    "start_voltage_sag": (
+        "set_start_voltage_sag_sensor",
+        lambda: sensor.sensor_schema(
+            unit_of_measurement=UNIT_PERCENT,
+            state_class=STATE_CLASS_MEASUREMENT,
+            accuracy_decimals=1,
+        ),
+    ),
+    "start_clipped": (
+        "set_start_clipped_sensor",
+        lambda: sensor.sensor_schema(accuracy_decimals=0),
+    ),
+    "start_count": (
+        "set_start_count_sensor",
+        lambda: sensor.sensor_schema(
+            state_class=STATE_CLASS_TOTAL_INCREASING, accuracy_decimals=0
+        ),
+    ),
+}
+
+CYCLE_CAPTURE_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(): cv.declare_id(CycleCaptureConfig),
+        cv.Optional(CONF_POLL_INTERVAL, default="50ms"): cv.All(
+            cv.positive_time_period_milliseconds,
+            cv.Range(max=cv.TimePeriod(milliseconds=400)),
+        ),
+        cv.Optional(CONF_LIVE_INTERVAL, default="1s"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_TRIGGER_CURRENT, default=100.0): cv.positive_float,
+        cv.Optional(CONF_REARM_CURRENT): cv.positive_float,
+        cv.Optional(CONF_PRE_TRIGGER, default="500ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_POST_TRIGGER, default="5s"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_SETTLE_FACTOR, default=1.3): cv.float_range(min=1.0, max=5.0),
+        cv.Optional(CONF_MAINS_CURRENT_MULTIPLIER, default=1.0): cv.positive_float,
+        cv.Optional(CONF_AUX_CURRENT_MULTIPLIER, default=1.0): cv.positive_float,
+        cv.Optional(CONF_AUX_INPUTS, default=[]): cv.All(
+            cv.ensure_list(cv.int_range(min=1, max=16)), cv.Length(max=2)
+        ),
+        cv.Optional(CONF_LOG_TRACE, default=True): cv.boolean,
+        # SAMD09 ADC frames per second. Leave out to measure it against the ESP32 clock.
+        cv.Optional(CONF_FRAME_RATE): cv.float_range(min=20000, max=32000),
+        cv.Optional(CONF_ON_START_CAPTURED): automation.validate_automation(
+            {
+                cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
+                    EmporiaVueStartCapturedTrigger
+                ),
+            }
+        ),
+        **{cv.Optional(key): factory() for key, (_, factory) in CYCLE_CAPTURE_SENSORS.items()},
+    }
+)
+
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -160,6 +284,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_PHASES): validate_phases,
             cv.Required(CONF_CT_CLAMPS): cv.ensure_list(SCHEMA_CT_CLAMP),
             cv.Optional(CONF_VARIANT, default="vue2"): cv.one_of("vue2", "vue3", lower=True),
+            cv.Optional(CONF_CYCLE_CAPTURE): CYCLE_CAPTURE_SCHEMA,
             cv.Optional(CONF_ON_UPDATE): automation.validate_automation(
                 {
                     cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
@@ -227,3 +352,35 @@ async def to_code(config):
     for trigger_conf in config.get(CONF_ON_UPDATE, []):
         trigger = cg.new_Pvariable(trigger_conf[CONF_TRIGGER_ID], var)
         await automation.build_automation(trigger, [], trigger_conf )
+
+    if CONF_CYCLE_CAPTURE in config:
+        cc_conf = config[CONF_CYCLE_CAPTURE]
+        cc = cg.new_Pvariable(cc_conf[CONF_ID])
+        cg.add(cc.set_poll_interval(cc_conf[CONF_POLL_INTERVAL]))
+        cg.add(cc.set_live_interval(cc_conf[CONF_LIVE_INTERVAL]))
+        cg.add(cc.set_trigger_current(cc_conf[CONF_TRIGGER_CURRENT]))
+        if CONF_REARM_CURRENT in cc_conf:
+            cg.add(cc.set_rearm_current(cc_conf[CONF_REARM_CURRENT]))
+        cg.add(cc.set_pre_trigger(cc_conf[CONF_PRE_TRIGGER]))
+        cg.add(cc.set_post_trigger(cc_conf[CONF_POST_TRIGGER]))
+        cg.add(cc.set_settle_factor(cc_conf[CONF_SETTLE_FACTOR]))
+        cg.add(cc.set_mains_current_multiplier(cc_conf[CONF_MAINS_CURRENT_MULTIPLIER]))
+        cg.add(cc.set_aux_current_multiplier(cc_conf[CONF_AUX_CURRENT_MULTIPLIER]))
+        for i, aux in enumerate(cc_conf[CONF_AUX_INPUTS]):
+            # input "1".."16" is index 3..18 in the SAMD09 packet
+            cg.add(cc.set_aux_input(i, aux + 2))
+        cg.add(cc.set_log_trace(cc_conf[CONF_LOG_TRACE]))
+        if CONF_FRAME_RATE in cc_conf:
+            cg.add(cc.set_frame_rate(cc_conf[CONF_FRAME_RATE]))
+        for key, (setter, _) in CYCLE_CAPTURE_SENSORS.items():
+            if key in cc_conf:
+                sens = await sensor.new_sensor(cc_conf[key])
+                cg.add(getattr(cc, setter)(sens))
+        for trigger_conf in cc_conf.get(CONF_ON_START_CAPTURED, []):
+            trigger = cg.new_Pvariable(trigger_conf[CONF_TRIGGER_ID], cc)
+            await automation.build_automation(
+                trigger,
+                [(cg.std_string, "summary"), (cg.std_string, "trace")],
+                trigger_conf,
+            )
+        cg.add(var.set_cycle_capture(cc))
