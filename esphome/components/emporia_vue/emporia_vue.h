@@ -174,6 +174,7 @@ class CycleCaptureConfig {
   void set_start_inrush_100ms_sensor(sensor::Sensor *s) { this->start_inrush_100ms_sensor_ = s; }
   void set_start_peak_instant_sensor(sensor::Sensor *s) { this->start_peak_instant_sensor_ = s; }
   void set_start_running_current_sensor(sensor::Sensor *s) { this->start_running_current_sensor_ = s; }
+  void set_start_rms_current_sensor(sensor::Sensor *s) { this->start_rms_current_sensor_ = s; }
   void set_start_duration_sensor(sensor::Sensor *s) { this->start_duration_sensor_ = s; }
   void set_start_voltage_min_sensor(sensor::Sensor *s) { this->start_voltage_min_sensor_ = s; }
   void set_start_voltage_sag_sensor(sensor::Sensor *s) { this->start_voltage_sag_sensor_ = s; }
@@ -204,6 +205,7 @@ class CycleCaptureConfig {
   sensor::Sensor *start_inrush_100ms_sensor_{nullptr};
   sensor::Sensor *start_peak_instant_sensor_{nullptr};
   sensor::Sensor *start_running_current_sensor_{nullptr};
+  sensor::Sensor *start_rms_current_sensor_{nullptr};
   sensor::Sensor *start_duration_sensor_{nullptr};
   sensor::Sensor *start_voltage_min_sensor_{nullptr};
   sensor::Sensor *start_voltage_sag_sensor_{nullptr};

@@ -41,6 +41,7 @@ float StartSummary::max_inrush_100ms() const {
   return std::fmax(inrush_100ms[0], std::fmax(inrush_100ms[1], inrush_100ms[2]));
 }
 float StartSummary::max_running() const { return std::fmax(running[0], std::fmax(running[1], running[2])); }
+float StartSummary::max_start_rms() const { return std::fmax(start_rms[0], std::fmax(start_rms[1], start_rms[2])); }
 float StartSummary::min_voltage(const CycleScaling &s) const {
   float m = NAN;
   for (int w = 0; w < 3; w++)
@@ -229,6 +230,17 @@ void StartAnalyzer::finish_() {
   sm.duration = t[last_high] + S(last_high).dt;
   sm.settled = last_high + 1 < n;
 
+  // RMS over the whole start, onset up to and including the last cycle above the settle level
+  for (int m = 0; m < 3; m++) {
+    double acc = 0, tacc = 0;
+    for (size_t k = trig; k <= last_high; k++) {
+      CycleSample c = S(k);
+      acc += static_cast<double>(c.i[m]) * c.i[m] * c.dt;
+      tacc += c.dt;
+    }
+    sm.start_rms[m] = tacc > 0 ? static_cast<float>(std::sqrt(acc / tacc)) : 0;
+  }
+
   // voltage and frequency
   for (int w = 0; w < 3; w++) {
     double acc = 0, tacc = 0;
@@ -322,6 +334,7 @@ std::string StartAnalyzer::summary_json() const {
   per_phase("peak_a", sm.peak_rms, "%.1f");
   per_phase("inrush_100ms_a", sm.inrush_100ms, "%.1f");
   per_phase("peak_instant_a", sm.peak_instant, "%.1f");
+  per_phase("start_rms_a", sm.start_rms, "%.1f");
   per_phase("running_a", sm.running, "%.1f");
   append(s, ",\"duration_s\":%.3f,\"settled\":%s", sm.duration, sm.settled ? "true" : "false");
   per_wire("v_before", sm.v_before, "%.1f");

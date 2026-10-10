@@ -239,11 +239,11 @@ void EmporiaVueComponent::cycle_capture_publish_start_() {
       if (sc.mains_name[k] == letter && (sm.clipped_mask & (1 << k)))
         clipped[nc++] = letter;
   ESP_LOGI(TAG,
-           "Start %u: peak %.0f A (one cycle), inrush 100 ms %.0f A, instant %.0f A, running %.1f A, "
-           "duration %.2f s%s, Vmin %.1f V (sag %.1f%%), f %.2f-%.2f Hz, clipped: %s, gaps %u",
-           (unsigned) sm.number, sm.max_peak_rms(), sm.max_inrush_100ms(), sm.max_peak_instant(), sm.max_running(),
-           sm.duration, sm.settled ? "" : " (not settled)", sm.min_voltage(sc), sm.max_sag(sc), sm.f_min, sm.f_max,
-           nc ? clipped : "-", (unsigned) sm.gaps);
+           "Start %u: peak %.0f A (one cycle), inrush 100 ms %.0f A, instant %.0f A, start RMS %.0f A over "
+           "%.2f s%s, running %.1f A, Vmin %.1f V (sag %.1f%%), f %.2f-%.2f Hz, clipped: %s, gaps %u",
+           (unsigned) sm.number, sm.max_peak_rms(), sm.max_inrush_100ms(), sm.max_peak_instant(), sm.max_start_rms(),
+           sm.duration, sm.settled ? "" : " (not settled)", sm.max_running(), sm.min_voltage(sc), sm.max_sag(sc),
+           sm.f_min, sm.f_max, nc ? clipped : "-", (unsigned) sm.gaps);
   if (sm.clipped_mask)
     ESP_LOGW(TAG, "Start %u: current reached the ADC limit, peak and inrush values are too low. Use CTs with a "
                   "higher rating (and mains_current_multiplier).",
@@ -257,6 +257,7 @@ void EmporiaVueComponent::cycle_capture_publish_start_() {
   pub(cc->start_inrush_100ms_sensor_, sm.max_inrush_100ms());
   pub(cc->start_peak_instant_sensor_, sm.max_peak_instant());
   pub(cc->start_running_current_sensor_, sm.max_running());
+  pub(cc->start_rms_current_sensor_, sm.max_start_rms());
   pub(cc->start_duration_sensor_, sm.duration);
   pub(cc->start_voltage_min_sensor_, sm.min_voltage(sc));
   pub(cc->start_voltage_sag_sensor_, sm.max_sag(sc));

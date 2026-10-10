@@ -9,6 +9,8 @@ detects motor starts and reports for every start:
 - the RMS over the first 100 ms (the same window a Fluke clamp uses for "inrush"; ±1 cycle)
 - the highest instantaneous current
 - the start duration (until the current stays below `settle_factor` x running current)
+- the RMS current over the whole start (onset to end of the start): the number to hold against an inverter's
+  overload rating (for example 150% for 10 s), together with the duration
 - the voltage before the start, the lowest one-cycle voltage and the sag in %
 - the frequency range during the start
 - whether a CT reached the ADC limit (then the peak values are too low)
@@ -52,6 +54,8 @@ sensor:
         name: "Start peak instant"
       start_running_current:
         name: "Start running current"
+      start_rms_current:
+        name: "Start RMS current"
       start_duration:
         name: "Start duration"
       start_voltage_min:
@@ -86,7 +90,7 @@ blocks. Copy it from `esphome logs` into a spreadsheet.
 Example log of a start (simulated: grid, 600A CTs, locked-rotor current 444 A):
 
 ```
-Start 1: peak 442 A (one cycle), inrush 100 ms 266 A, instant 628 A, running 50.0 A, duration 0.98 s,
+Start 1: peak 442 A (one cycle), inrush 100 ms 266 A, instant 628 A, start RMS 315 A over 0.98 s, running 50.0 A,
          Vmin 116.7 V (sag 8.1%), f 59.85-60.12 Hz, clipped: -, gaps 0
 start 1 trace: t_ms,i_A,i_B,i_C,pk_A,pk_B,pk_C,v_BLACK,v_RED,v_BLUE,hz,clip,flags,aux0,aux1
 start 1 trace: 0,266.4,266.4,266.5,378,377,378,121.4,121.4,121.4,59.99,0,0,4.09,82.43
@@ -112,7 +116,7 @@ start 1 trace: 200,441.1,441.9,442.3,627,628,627,116.7,117.0,117.0,59.85,0,0,4.1
 | `frame_rate` | measured | SAMD09 ADC frames per second. Leave out: it is measured against the ESP32 clock over 60 s windows |
 
 Live sensors: `max_current`, `min_voltage`, `min_frequency`, `max_frequency`.
-Per start: `start_peak_current`, `start_inrush_100ms`, `start_peak_instant`, `start_running_current`,
+Per start: `start_peak_current`, `start_inrush_100ms`, `start_peak_instant`, `start_rms_current`, `start_running_current`,
 `start_duration`, `start_voltage_min`, `start_voltage_sag`, `start_clipped` (0/1), `start_count`.
 Per start values are the maximum over the phases (voltage: minimum over the wires); the JSON has them per phase.
 
@@ -124,6 +128,9 @@ Per start values are the maximum over the phases (voltage: minimum over the wire
   record covers two cycles. Both should be 0.
 - **settled: false**: the current was still above the settle level at the end of the trace (increase
   `post_trigger`, or the motor did not come up to speed).
+- **100 ms vs the whole start**: `start_inrush_100ms` uses the same window as a Fluke clamp and is there to check
+  the measurement against one. Whether an inverter can carry a start is decided by `start_rms_current` and
+  `start_duration`, and the full trace shows how the current develops.
 - **t = 0** is the first cycle above `rearm_current`. The start can begin mid-cycle, so the first cycle may be
   lower.
 

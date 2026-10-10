@@ -87,6 +87,7 @@ struct StartSummary {
   float peak_instant[3]{};  // highest single sample, A
   float inrush_100ms[3]{};  // RMS over the first 100 ms from the onset (compare: Fluke inrush, +-1 cycle)
   float running[3]{};       // mean RMS over the last 0.5 s of the trace
+  float start_rms[3]{};     // RMS over the whole start (onset .. duration): compare with the inverter overload rating
   float duration{0};        // s from the onset until the current stays below the settle level
   bool settled{false};      // false: still above settle level at the end of the trace
   float v_before[3]{};      // mean V RMS before the onset, by wire
@@ -101,6 +102,7 @@ struct StartSummary {
   float max_peak_instant() const;
   float max_inrush_100ms() const;
   float max_running() const;
+  float max_start_rms() const;
   float min_voltage(const CycleScaling &s) const;
   float max_sag(const CycleScaling &s) const;
 };

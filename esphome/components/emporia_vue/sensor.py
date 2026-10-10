@@ -214,6 +214,7 @@ CYCLE_CAPTURE_SENSORS = {
     "start_inrush_100ms": ("set_start_inrush_100ms_sensor", _current_sensor),
     "start_peak_instant": ("set_start_peak_instant_sensor", _current_sensor),
     "start_running_current": ("set_start_running_current_sensor", _current_sensor),
+    "start_rms_current": ("set_start_rms_current_sensor", _current_sensor),
     "start_duration": (
         "set_start_duration_sensor",
         lambda: sensor.sensor_schema(
