@@ -119,6 +119,46 @@ Live sensors: `max_current`, `min_voltage`, `min_frequency`, `max_frequency`.
 Per start: `start_peak_current`, `start_inrush_100ms`, `start_peak_instant`, `start_rms_current`, `start_running_current`,
 `start_duration`, `start_voltage_min`, `start_voltage_sag`, `start_clipped` (0/1), `start_count`.
 Per start values are the maximum over the phases (voltage: minimum over the wires); the JSON has them per phase.
+SAMD09 health (needs SAMD09 firmware v2): `isr_max_time`, `isr_load`, `adc_overruns`, see below.
+
+## SAMD09 interrupt timing
+
+The SAMD09 processes every ADC frame (25974 per second, 38.5 us apart) in its DMA interrupt. That interrupt must
+be finished before the next frame arrives, otherwise samples are lost. SAMD09 firmware v2 measures this itself
+(SysTick, in CPU cycles) and reports it in the status message; nothing has to be connected to the board.
+
+| Sensor | Meaning |
+|---|---|
+| `isr_max_time` | longest DMA interrupt since the previous publish (every `live_interval`), in us |
+| `isr_load` | the same as a percentage of the ADC frame period. Must stay below 100%; aim for less than 90% |
+| `adc_overruns` | ADC results that were overwritten before the DMA took them (= lost samples) since ESP boot. Must stay 0 |
+
+The measurement covers the interrupt from its first to its last instruction; entry and exit add about 1 us
+(~45 CPU cycles) on top. The conversion to us uses the measured frame rate (after the first minute).
+The component also logs once a minute, as a warning above 90% or when overruns occur (example values):
+
+```
+Cycle capture: longest DMA interrupt 27.81 us = 72.2% of the 38.50 us ADC frame (since boot 28.02 us), ADC overruns 0
+```
+
+With one publish per second, a `max` filter keeps Home Assistant quiet:
+
+```yaml
+      isr_max_time:
+        name: "SAMD09 interrupt max"
+        filters:
+          - max:
+              window_size: 60
+              send_every: 60
+      isr_load:
+        name: "SAMD09 interrupt load"
+        filters:
+          - max:
+              window_size: 60
+              send_every: 60
+      adc_overruns:
+        name: "SAMD09 ADC overruns"
+```
 
 ## Reading the results
 

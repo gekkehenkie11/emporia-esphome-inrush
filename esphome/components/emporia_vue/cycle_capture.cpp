@@ -30,6 +30,12 @@ CycleStatus parse_cycle_status(const uint8_t *buf, size_t len) {
   st.aux_port[0] = buf[8];
   st.aux_port[1] = buf[9];
   st.ring_size = buf[10];
+  if (st.version >= 2 && len >= 16) {
+    st.has_timing = true;
+    st.adc_overruns = buf[11];
+    st.isr_max_cycles = static_cast<uint16_t>(buf[12] | (buf[13] << 8));
+    st.frame_cycles16 = static_cast<uint16_t>(buf[14] | (buf[15] << 8));
+  }
   return st;
 }
 

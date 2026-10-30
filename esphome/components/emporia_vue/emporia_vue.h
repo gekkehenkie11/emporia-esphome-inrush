@@ -61,6 +61,7 @@ class EmporiaVueComponent : public PollingComponent, public i2c::I2CDevice {
  protected:
   void cycle_capture_poll_();
   void cycle_capture_publish_start_();
+  float cycle_capture_us_per_cpu_cycle_() const;
 
   uint8_t last_sequence_num_ = 0;
   std::vector<PhaseConfig *> phases_;
@@ -180,6 +181,10 @@ class CycleCaptureConfig {
   void set_start_voltage_sag_sensor(sensor::Sensor *s) { this->start_voltage_sag_sensor_ = s; }
   void set_start_clipped_sensor(sensor::Sensor *s) { this->start_clipped_sensor_ = s; }
   void set_start_count_sensor(sensor::Sensor *s) { this->start_count_sensor_ = s; }
+  // SAMD09 DMA interrupt timing (firmware v2)
+  void set_isr_max_time_sensor(sensor::Sensor *s) { this->isr_max_time_sensor_ = s; }
+  void set_isr_load_sensor(sensor::Sensor *s) { this->isr_load_sensor_ = s; }
+  void set_adc_overruns_sensor(sensor::Sensor *s) { this->adc_overruns_sensor_ = s; }
 
   void add_on_start_callback(std::function<void(std::string, std::string)> &&callback) {
     this->start_callback_.add(std::move(callback));
@@ -211,6 +216,9 @@ class CycleCaptureConfig {
   sensor::Sensor *start_voltage_sag_sensor_{nullptr};
   sensor::Sensor *start_clipped_sensor_{nullptr};
   sensor::Sensor *start_count_sensor_{nullptr};
+  sensor::Sensor *isr_max_time_sensor_{nullptr};
+  sensor::Sensor *isr_load_sensor_{nullptr};
+  sensor::Sensor *adc_overruns_sensor_{nullptr};
 
   CallbackManager<void(std::string, std::string)> start_callback_;
   bool has_start_callback_{false};
@@ -236,6 +244,17 @@ class CycleCaptureConfig {
   size_t pending_pos_{0};    // next trace line to log
   size_t pending_count_{0};  // 0 = nothing to log
   uint32_t pending_number_{0};
+  // SAMD09 DMA interrupt timing (firmware v2)
+  bool timing_seen_{false};
+  float frame_cycles_{0};       // CPU cycles per ADC frame, 0 = not measured yet
+  uint32_t isr_live_max_{0};    // CPU cycles, since the last live publish
+  uint32_t isr_log_max_{0};     // CPU cycles, since the last timing log line
+  uint32_t isr_boot_max_{0};    // CPU cycles, since boot
+  uint32_t last_timing_log_{0};
+  bool have_overruns_{false};
+  uint8_t last_overruns_{0};
+  uint32_t overruns_total_{0};
+  uint32_t overruns_logged_{0};
 };
 
 }  // namespace emporia_vue

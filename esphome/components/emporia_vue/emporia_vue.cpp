@@ -153,6 +153,28 @@ void EmporiaVueComponent::cycle_capture_poll_() {
   cc->last_lost_ = status.lost;
   cc->have_lost_ = true;
 
+  // DMA interrupt timing (firmware v2): longest interrupt since the previous status read, ADC overruns
+  if (status.has_timing) {
+    if (status.frame_cycles16 > 0)
+      cc->frame_cycles_ = status.frame_cycles16 / 16.0f;
+    if (!cc->timing_seen_ && cc->frame_cycles_ > 0) {
+      cc->timing_seen_ = true;
+      cc->last_timing_log_ = now;
+      ESP_LOGI(TAG, "Cycle capture: DMA interrupt timing available, ADC frame = %.1f CPU cycles", cc->frame_cycles_);
+    }
+    const uint32_t m = status.isr_max_cycles;
+    if (m > cc->isr_live_max_)
+      cc->isr_live_max_ = m;
+    if (m > cc->isr_log_max_)
+      cc->isr_log_max_ = m;
+    if (m > cc->isr_boot_max_)
+      cc->isr_boot_max_ = m;
+    if (cc->have_overruns_)
+      cc->overruns_total_ += static_cast<uint8_t>(status.adc_overruns - cc->last_overruns_);
+    cc->last_overruns_ = status.adc_overruns;
+    cc->have_overruns_ = true;
+  }
+
   int remaining = status.available;
   uint32_t frames_read = 0;
   for (int transactions = 0; remaining > 0 && transactions < 4; transactions++) {
@@ -172,8 +194,10 @@ void EmporiaVueComponent::cycle_capture_poll_() {
         ESP_LOGV(TAG, "Cycle capture: record with bad checksum");
         continue;
       }
-      if (rec.flags & CYCF_FIRST)
+      if (rec.flags & CYCF_FIRST) {
         ESP_LOGI(TAG, "Cycle capture: SAMD09 (re)started");
+        cc->have_overruns_ = false;  // its overrun counter starts at 0 again
+      }
       frames_read += rec.nsamples;
       if (cc->analyzer_.add(rec))
         this->cycle_capture_publish_start_();
@@ -224,7 +248,49 @@ void EmporiaVueComponent::cycle_capture_poll_() {
     v = cc->analyzer_.take_max_frequency();
     if (cc->max_frequency_sensor_ != nullptr && !std::isnan(v))
       cc->max_frequency_sensor_->publish_state(v);
+    if (cc->timing_seen_) {
+      if (cc->isr_max_time_sensor_ != nullptr)
+        cc->isr_max_time_sensor_->publish_state(cc->isr_live_max_ * this->cycle_capture_us_per_cpu_cycle_());
+      if (cc->isr_load_sensor_ != nullptr)
+        cc->isr_load_sensor_->publish_state(cc->isr_live_max_ * 100.0f / cc->frame_cycles_);
+      if (cc->adc_overruns_sensor_ != nullptr)
+        cc->adc_overruns_sensor_->publish_state(cc->overruns_total_);
+      cc->isr_live_max_ = 0;
+    }
   }
+
+  // once a minute: the longest DMA interrupt against the ADC frame period
+  if (cc->timing_seen_ && now - cc->last_timing_log_ >= 60000) {
+    cc->last_timing_log_ = now;
+    const float us = this->cycle_capture_us_per_cpu_cycle_();
+    const float load = cc->isr_log_max_ * 100.0f / cc->frame_cycles_;
+    const uint32_t new_overruns = cc->overruns_total_ - cc->overruns_logged_;
+    cc->overruns_logged_ = cc->overruns_total_;
+    if (load > 90.0f || new_overruns > 0) {
+      ESP_LOGW(TAG,
+               "Cycle capture: longest DMA interrupt %.2f us = %.1f%% of the %.2f us ADC frame (since boot %.2f us), "
+               "ADC overruns %u new, %u total. Above 100%% or with overruns the SAMD09 loses samples.",
+               cc->isr_log_max_ * us, load, cc->frame_cycles_ * us, cc->isr_boot_max_ * us, (unsigned) new_overruns,
+               (unsigned) cc->overruns_total_);
+    } else {
+      ESP_LOGI(TAG,
+               "Cycle capture: longest DMA interrupt %.2f us = %.1f%% of the %.2f us ADC frame (since boot %.2f us), "
+               "ADC overruns %u",
+               cc->isr_log_max_ * us, load, cc->frame_cycles_ * us, cc->isr_boot_max_ * us,
+               (unsigned) cc->overruns_total_);
+    }
+    cc->isr_log_max_ = 0;
+  }
+}
+
+// One SAMD09 CPU cycle in us: the ADC frame rate (measured against the ESP32 clock after a minute, nominal
+// before that) times the measured CPU cycles per frame gives the CPU clock.
+float EmporiaVueComponent::cycle_capture_us_per_cpu_cycle_() const {
+  auto *cc = this->cycle_capture_;
+  const float fr = cc->analyzer_.get_scaling().frame_rate;
+  if (cc->frame_cycles_ <= 0 || fr <= 0)
+    return 1.0f / 48.0f;
+  return 1e6f / (fr * cc->frame_cycles_);
 }
 
 void EmporiaVueComponent::cycle_capture_publish_start_() {

@@ -19,7 +19,8 @@ namespace emporia_vue {
 static const uint8_t CYC_CMD_STATUS = 0xA0;  // then read CYC_STATUS_LEN bytes
 static const uint8_t CYC_CMD_CYCLES = 0xA1;  // then read n * sizeof(CycleRecord) bytes
 static const uint8_t CYC_CMD_CONFIG = 0xA2;  // followed by 2 bytes: aux port index 3..18, 0xFF = off
-static const size_t CYC_STATUS_LEN = 12;
+// Status length. Firmware v1 answers 12 bytes (then 0xFF), v2 adds the interrupt timing in bytes 11..15.
+static const size_t CYC_STATUS_LEN = 16;
 
 // Record flags
 static const uint8_t CYCF_NO_ZEROCROSS = 0x01;  // closed by timeout, no zero crossing on voltage 1
@@ -55,6 +56,11 @@ struct CycleStatus {
   uint16_t frame_rate{0};
   uint8_t aux_port[2]{0xFF, 0xFF};
   uint8_t ring_size{0};
+  // interrupt timing, firmware v2 and later
+  bool has_timing{false};
+  uint8_t adc_overruns{0};      // free running: ADC samples lost because the DMA interrupt was late
+  uint16_t isr_max_cycles{0};   // longest DMA interrupt since the previous status read, CPU cycles
+  uint16_t frame_cycles16{0};   // ADC frame period in CPU cycles x 16, 0 = not measured yet
 };
 
 CycleStatus parse_cycle_status(const uint8_t *buf, size_t len);

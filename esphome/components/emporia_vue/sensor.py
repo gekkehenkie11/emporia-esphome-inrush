@@ -17,6 +17,7 @@ from esphome.const import (
     DEVICE_CLASS_FREQUENCY,
     DEVICE_CLASS_POWER,
     DEVICE_CLASS_VOLTAGE,
+    ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
     STATE_CLASS_TOTAL_INCREASING,
     UNIT_AMPERE,
@@ -241,6 +242,33 @@ CYCLE_CAPTURE_SENSORS = {
         "set_start_count_sensor",
         lambda: sensor.sensor_schema(
             state_class=STATE_CLASS_TOTAL_INCREASING, accuracy_decimals=0
+        ),
+    ),
+    # SAMD09 DMA interrupt timing (needs SAMD09 firmware v2)
+    "isr_max_time": (
+        "set_isr_max_time_sensor",
+        lambda: sensor.sensor_schema(
+            unit_of_measurement="µs",
+            state_class=STATE_CLASS_MEASUREMENT,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            accuracy_decimals=2,
+        ),
+    ),
+    "isr_load": (
+        "set_isr_load_sensor",
+        lambda: sensor.sensor_schema(
+            unit_of_measurement=UNIT_PERCENT,
+            state_class=STATE_CLASS_MEASUREMENT,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            accuracy_decimals=1,
+        ),
+    ),
+    "adc_overruns": (
+        "set_adc_overruns_sensor",
+        lambda: sensor.sensor_schema(
+            state_class=STATE_CLASS_TOTAL_INCREASING,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            accuracy_decimals=0,
         ),
     ),
 }
