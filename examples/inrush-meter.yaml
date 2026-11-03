@@ -1,0 +1,198 @@
+# Emporia Vue 2 as an inrush / motor start meter, on the feeder of one motor load, WITH neutral.
+# Needs the cycle-capture SAMD09 firmware: samd09/EmporiaSamd09-cycle-capture-v2.bin (see INRUSH_METER.md).
+#
+# Voltage (from its own breaker): BLACK on L1, RED on L2, BLUE on L3, WHITE on N.
+# Mains CTs, each around one conductor of the feeder, arrow towards the load:
+#   CT A around L1, CT B around L2, CT C around L3.
+#   Keep all three plugged in: an open input reads the ADC limit and blocks the start detection.
+# The board is NOT isolated from mains: no USB/serial/SWD while it is connected, update over the air only.
+#
+# Only change the substitutions.
+
+substitutions:
+  device: "motor-1"           # device name, also sent with every start event
+  friendly: "Motor 1"         # prefix of the entity names
+  ct_multiplier: "3.0"        # 600A CTs: 3.0 (check with a clamp meter), stock 200A Emporia CTs: 1.0
+  start_trigger: "100"        # A: a start is captured when a mains phase rises above this
+
+esphome:
+  name: vue-${device}
+  friendly_name: Vue ${friendly}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+external_components:
+  - source: github://gekkehenkie11/emporia-esphome-inrush@cycle-capture
+    components: [emporia_vue]
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # Without a connection for a minute the Vue opens this access point; connect to it and pick the
+  # right network on the page that opens (or http://192.168.4.1).
+  ap:
+    ssid: "Vue ${friendly} fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+
+logger:
+  level: DEBUG
+  logs:
+    sensor: INFO
+
+light:
+  - platform: status_led
+    name: "LED"
+    pin: 23
+    restore_mode: ALWAYS_ON
+    entity_category: config
+
+i2c:
+  sda: 21
+  scl: 22
+  scan: false
+  frequency: 400kHz
+  timeout: 1ms
+  id: i2c_a
+
+sensor:
+  - platform: emporia_vue
+    i2c_id: i2c_a
+    phases:
+      - id: phase_a          # BLACK on L1
+        input: BLACK         # the frequency sensor is only available on the BLACK wire
+        calibration: 0.022
+        voltage:
+          name: "${friendly} voltage L1"
+          filters:
+            - throttle_average: 5s
+        frequency:
+          name: "${friendly} frequency"
+          filters:
+            - throttle_average: 5s
+      - id: phase_b          # RED on L2
+        input: RED
+        calibration: 0.022
+        voltage:
+          name: "${friendly} voltage L2"
+          filters:
+            - throttle_average: 5s
+      - id: phase_c          # BLUE on L3
+        input: BLUE
+        calibration: 0.022
+        voltage:
+          name: "${friendly} voltage L3"
+          filters:
+            - throttle_average: 5s
+    ct_clamps:
+      - phase_id: phase_a    # CT A around L1
+        input: "A"
+        current:
+          name: "${friendly} current L1"
+          filters:
+            - multiply: ${ct_multiplier}
+            - throttle_average: 5s
+        power:
+          id: p_l1
+          internal: true
+          filters:
+            - multiply: ${ct_multiplier}
+            - throttle_average: 5s
+      - phase_id: phase_b    # CT B around L2
+        input: "B"
+        current:
+          name: "${friendly} current L2"
+          filters:
+            - multiply: ${ct_multiplier}
+            - throttle_average: 5s
+        power:
+          id: p_l2
+          internal: true
+          filters:
+            - multiply: ${ct_multiplier}
+            - throttle_average: 5s
+      - phase_id: phase_c    # CT C around L3
+        input: "C"
+        current:
+          name: "${friendly} current L3"
+          filters:
+            - multiply: ${ct_multiplier}
+            - throttle_average: 5s
+        power:
+          id: p_l3
+          internal: true
+          filters:
+            - multiply: ${ct_multiplier}
+            - throttle_average: 5s
+    cycle_capture:
+      trigger_current: ${start_trigger}
+      mains_current_multiplier: ${ct_multiplier}
+      # once a minute: highest one-cycle current and lowest one-cycle voltage
+      max_current:
+        name: "${friendly} max cycle current"
+        filters:
+          - max: { window_size: 60, send_every: 60 }
+      min_voltage:
+        name: "${friendly} min cycle voltage"
+        filters:
+          - min: { window_size: 60, send_every: 60 }
+      # one value per start
+      start_peak_current:
+        name: "${friendly} start peak current"
+      start_inrush_100ms:
+        name: "${friendly} start inrush 100 ms"
+      start_peak_instant:
+        name: "${friendly} start peak instant"
+      start_rms_current:
+        name: "${friendly} start RMS current"
+      start_running_current:
+        name: "${friendly} start running current"
+      start_duration:
+        name: "${friendly} start duration"
+      start_voltage_min:
+        name: "${friendly} start voltage min"
+      start_voltage_sag:
+        name: "${friendly} start voltage sag"
+      start_clipped:
+        name: "${friendly} start clipped"
+      start_count:
+        name: "${friendly} start count"
+      # SAMD09 health: interrupt load must stay below 100% (aim < 90%), overruns must stay 0
+      isr_load:
+        name: "${friendly} SAMD09 interrupt load"
+        filters:
+          - max: { window_size: 60, send_every: 60 }
+      adc_overruns:
+        name: "${friendly} SAMD09 ADC overruns"
+        filters:
+          - throttle: 60s
+      on_start_captured:
+        - homeassistant.event:
+            event: esphome.compressor_start
+            data:
+              device: ${device}
+              summary: !lambda 'return summary;'
+
+  - platform: template
+    name: "${friendly} power"
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return id(p_l1).state + id(p_l2).state + id(p_l3).state;'
+
+  - platform: wifi_signal
+    name: "${friendly} wifi signal"
+    update_interval: 60s

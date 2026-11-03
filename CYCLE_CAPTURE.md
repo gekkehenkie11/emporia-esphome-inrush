@@ -1,5 +1,8 @@
 # Cycle capture: start / inrush measurements
 
+To build one from a stock Vue 2 (flashing, wiring, Home Assistant logging), see [INRUSH_METER.md](INRUSH_METER.md).
+Prebuilt SAMD09 firmware is in [`samd09/`](samd09).
+
 With the **cycle-capture SAMD09 firmware** (`gekkehenkie11/emporia-samd09`, branch `cycle-capture`) the
 Vue delivers one record per mains cycle: the RMS of the 3 voltages and 3 mains currents over that cycle, the
 peak sample of the mains currents and two selectable 50A CT inputs. This component reads those records,

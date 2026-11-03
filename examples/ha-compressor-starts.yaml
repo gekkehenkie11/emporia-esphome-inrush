@@ -1,0 +1,40 @@
+# Home Assistant: write every captured start as one line to a text file.
+# Line: <time> <device> <summary as JSON>, for example
+#   2026-11-03T11:16:07.123456-04:00 motor-1 {"start":9,"cycles":330,"peak_a":{"A":594.3,...},...}
+#
+# The Vue sends the event esphome.compressor_start. ESPHome events (esphome.*) reach Home Assistant
+# without enabling "Allow the device to perform Home Assistant actions".
+
+# ---- 1) configuration.yaml ----
+# If there is already a "homeassistant:" block, add only the allowlist_external_dirs part to it.
+homeassistant:
+  allowlist_external_dirs:
+    - /config/compressor_log
+# Then, in a terminal (Terminal & SSH add-on):
+#   mkdir -p /config/compressor_log
+#   ha core check
+#   ha core restart
+
+# ---- 2) File integration (in the UI) ----
+# Settings > Devices & services > Add integration > File > "Set up a notification service"
+#   File path: /config/compressor_log/starts.txt   timestamp: off
+# Open the new notify entity and set its entity ID to: notify.compressor_starts
+
+# ---- 3) Automation (Settings > Automations > Create > three dots > Edit in YAML) ----
+alias: Log motor starts
+mode: queued
+triggers:
+  - trigger: event
+    event_type: esphome.compressor_start
+actions:
+  - action: notify.send_message
+    target:
+      entity_id: notify.compressor_starts
+    data:
+      message: "{{ now().isoformat() }} {{ trigger.event.data.device }} {{ trigger.event.data.summary }}"
+
+# ---- 4) Test without waiting for a start ----
+# Developer tools > Events > Fire event: event type esphome.compressor_start, data:
+#   device: test
+#   summary: test
+# then: cat /config/compressor_log/starts.txt
